@@ -54,7 +54,7 @@ def collect_acts(dataset_name, model, layer, noperiod=False, center=True, scale=
     directory = os.path.join(directory, dataset_name)
     activation_files = glob(os.path.join(directory, f'layer_{layer}_*.pt'))
     if len(activation_files) == 0:
-        raise ValueError(f"Dataset {dataset_name} not found.")
+        raise ValueError(f"Dataset {dataset_name} ({directory}) not found.")
     acts = [t.load(os.path.join(directory, f'layer_{layer}_{i}.pt')).to(device) for i in range(0, ACTS_BATCH_SIZE * len(activation_files), ACTS_BATCH_SIZE)]
     acts = t.cat(acts, dim=0).float().to(device)
     if center:
@@ -94,6 +94,7 @@ class DataManager:
         Add a dataset to the DataManager.
         label : which column of the csv file to use as the labels.
         If split is not None, gives the train/val split proportion. Uses seed for reproducibility.
+        Datasets with the same base name (after removing 'neg_' prefix) will use the same seed.
         """
         acts = collect_acts(dataset_name, model_size, layer, noperiod=noperiod, center=center, scale=scale, device=device)
         df = pd.read_csv(os.path.join(ROOT, 'datasets', f'{dataset_name}.csv'))
@@ -104,8 +105,13 @@ class DataManager:
 
         if split is not None:
             assert 0 < split and split < 1
+            base_name = dataset_name[4:] if dataset_name.startswith('neg_') else dataset_name
+            
             if seed is None:
-                seed = random.randint(0, 1000)
+                import hashlib
+                hash_value = int(hashlib.md5(base_name.encode()).hexdigest(), 16)
+                seed = hash_value % 1000
+            
             t.manual_seed(seed)
             train = t.randperm(len(df)) < int(split * len(df))
             val = ~train
@@ -151,8 +157,3 @@ class DataManager:
         self.proj = get_pcs(acts, k=k, offset=dim_offset)
 
         self.data = dict_recurse(self.data, lambda x : (t.mm(x[0], self.proj), x[1]))
-    
-
-
-
-
