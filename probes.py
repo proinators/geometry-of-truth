@@ -116,3 +116,36 @@ class CCSProbe(t.nn.Module):
     @property
     def direction(self):
         return self.net[0].weight.data[0]
+
+
+class FisherLDAProbe(t.nn.Module):
+    def __init__(self, direction, inv_s_w):
+        super().__init__()
+        self.direction = t.nn.Parameter(direction, requires_grad=False)
+        self.inv_s_w = t.nn.Parameter(inv_s_w, requires_grad=False)
+
+    def forward(self, x, iid=None):
+        return t.sigmoid(x @ self.inv_s_w @ self.direction)
+
+    def pred(self, x, iid=None):
+        return self(x).round()
+
+    @staticmethod
+    def from_data(acts, labels, device='cpu'):
+        acts, labels = acts.to(device), labels.to(device)
+        pos_acts, neg_acts = acts[labels == 1], acts[labels == 0]
+        
+        pos_mean, neg_mean = pos_acts.mean(0), neg_acts.mean(0)
+        s_w = (pos_acts - pos_mean).T @ (pos_acts - pos_mean) + (neg_acts - neg_mean).T @ (neg_acts - neg_mean)
+        
+        inv_s_w = t.linalg.pinv(s_w, hermitian=True)
+        direction = inv_s_w @ (pos_mean - neg_mean)
+        
+        return FisherLDAProbe(direction, inv_s_w).to(device)
+    
+    def __str__():
+        return "FisherLDAProbe"
+    
+    @property
+    def projection_direction(self):
+        return self.direction
